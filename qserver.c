@@ -183,7 +183,7 @@ int server_loop(int sock, cb_table_t *callbacks)
         } // if
       } // else
     } // for
-  } // for
+  } // while
   
   close(ep);
   return 0;
