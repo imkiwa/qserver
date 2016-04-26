@@ -4,27 +4,39 @@
   if (fn) fn(arg)
 
 enum {
-  BACKLOG = 5,
   MAX_EVENT = 40, MAX_POLL = 256,
+  BUFFER_SIZE = 1024,
 };
 
 
-static cb_data_t* cb_data_new()
+static qserver_data_t* cb_data_new()
 {
-  return (cb_data_t*) malloc(sizeof(cb_data_t));
+  qserver_data_t *data = (qserver_data_t*) malloc(sizeof(qserver_data_t));
+  if (!data) {
+    return NULL;
+  }
+  
+  data->buffer = (char*) malloc(sizeof(char) * BUFFER_SIZE);
+  if (!data->buffer) {
+    free(data);
+    return NULL;
+  }
+  
+  return data;
 }
 
 
-static void cb_data_delete(cb_data_t *cb)
+static void cb_data_delete(qserver_data_t *cb)
 {
   if (cb) {
+    free(cb->buffer);
     free(cb);
   }
 }
 
-static int process_io(int ep, cb_table_t *callbacks, struct epoll_event *ev)
+static int process_io(qserver_t *server, int ep, struct epoll_event *ev)
 {
-  cb_data_t *data = ev->data.ptr;
+  qserver_data_t *data = ev->data.ptr;
   if (!data) {
     return -1;
   }
@@ -43,7 +55,7 @@ static int process_io(int ep, cb_table_t *callbacks, struct epoll_event *ev)
       printf(":: Connection disconnected, removing from epoll\n");
       close(fd);
       data->fd = 0;
-      CALL(callbacks->on_close, data);
+      CALL(server->callbacks.on_close, data);
       cb_data_delete(data);
       epoll_ctl(ep, EPOLL_CTL_DEL, fd, NULL);
       return 0;
@@ -53,11 +65,11 @@ static int process_io(int ep, cb_table_t *callbacks, struct epoll_event *ev)
     nev.events |= EPOLLOUT;
     epoll_ctl(ep, EPOLL_CTL_MOD, fd, &nev);
     
-    CALL(callbacks->on_data, data);
+    CALL(server->callbacks.on_data, data);
   }
   
   if (ev->events & EPOLLOUT) {
-    CALL(callbacks->on_reply, data);
+    CALL(server->callbacks.on_reply, data);
     nev.events |= EPOLLIN;
     epoll_ctl(ep, EPOLL_CTL_MOD, fd, &nev);
   }
@@ -66,74 +78,34 @@ static int process_io(int ep, cb_table_t *callbacks, struct epoll_event *ev)
 }
 
 
-int sock_get(int port)
+int qserver_shutdown(qserver_t *server, int flag)
 {
-  static int fd = -1;
-  if (port < 0) {
+  if (flag) {
+    server->status = flag;
+  }
+  
+  return server->status;
+}
+
+
+int qserver_running(qserver_t *server)
+{
+  return !qserver_shutdown(server, 0);
+}
+
+
+int qserver_loop(qserver_t *server)
+{
+  if (!server || server->fd < 0) {
     return -1;
   }
   
-  if (fd >= 0) {
-    return fd;  
-  }
-  
-  fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (fd < 0) {
-    return -1;  
-  }
-  
-  struct sockaddr_in addr;
-  memset(&addr, '\0', sizeof(addr));
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  
-  if (bind(fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-    close(fd);
-    fd = -1;
-	}
-	
-  if (listen(fd, BACKLOG) < 0) {
-    close(fd);
-    fd = -1;
-  }
-  
-  return fd;
-}
-
-
-int sock_nonblock(int fd)
-{
-  int f = fcntl(fd, F_GETFL);
-  f |= O_NONBLOCK;
-  return fcntl(fd, F_SETFL, f);  
-}
-
-
-int server_shutdown(int opt)
-{
-  static int shutdown = 0;
-  if (opt) {
-    shutdown = opt;
-  }
-  
-  return shutdown;
-}
-
-
-int server_running()
-{
-  return !server_shutdown(0);
-}
-
-
-int server_loop(int sock, cb_table_t *callbacks)
-{
   int ep = epoll_create(MAX_POLL);
   if (ep < 0) {
     return -1;
   }
   
+  int sock = server->fd;
   int nfds = 0;
   struct epoll_event ev;
   struct epoll_event events[MAX_EVENT];
@@ -146,14 +118,19 @@ int server_loop(int sock, cb_table_t *callbacks)
   ev.events = EPOLLIN | EPOLLET;
   epoll_ctl(ep, EPOLL_CTL_ADD, sock, &ev);
   
-  while (server_running()) {
+  for (;;) {
+    if (!qserver_running(server)) {
+      close(ep);
+      break;
+    }
+    
     nfds = epoll_wait(ep, events, MAX_EVENT, 0);
     for (int i = 0; i < nfds; ++i) {
-      cb_data_t *curdata = events[i].data.ptr;
+      qserver_data_t *curdata = events[i].data.ptr;
       
       // New client
       if (!curdata) {
-        cb_data_t *cb = cb_data_new();
+        qserver_data_t *cb = cb_data_new();
         if (!cb) {
           fprintf(stderr, "W: cb_data_new() failed: %s\n", strerror(errno));
           continue;
@@ -174,18 +151,17 @@ int server_loop(int sock, cb_table_t *callbacks)
         ev.data.ptr = (void*) cb;
         ev.events = EPOLLIN | EPOLLET;
         epoll_ctl(ep, EPOLL_CTL_ADD, conn, &ev);
-        CALL(callbacks->on_open, cb);
+        CALL(server->callbacks.on_open, cb);
 
       // I/O Operations
       } else {
-        if (process_io(ep, callbacks, events + i) < 0) {
+        if (process_io(server, ep, events + i) < 0) {
           fprintf(stderr, "W: process_io() failed\n");
         } // if
       } // else
     } // for
-  } // while
+  } // for (;;)
   
-  close(ep);
   return 0;
 }
 

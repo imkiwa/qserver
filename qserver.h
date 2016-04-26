@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -14,38 +15,43 @@
 #include <sys/types.h>
 
 enum {
-  BUFFER_SIZE = 1024,
-};
-
-enum {
   SERVEROPT_LOG = 0x00000001,
 };
 
-typedef struct
+typedef struct qserver_s qserver_t;
+typedef struct qserver_data_s qserver_data_t;
+typedef struct qserver_table_s qserver_table_t;
+
+struct qserver_data_s
 {
   int fd;
   struct sockaddr_in addr;
   socklen_t addr_len;
   
   ssize_t buffer_bytes;
-  char buffer[BUFFER_SIZE];
+  char *buffer;
   void *userdata;
-} cb_data_t;
+};
 
-typedef struct
+struct qserver_table_s
 {
-  void (*on_data)(cb_data_t *cb);
-  void (*on_reply)(cb_data_t *cb);
-  void (*on_open)(cb_data_t *cb);
-  void (*on_close)(cb_data_t *cb);
-} cb_table_t;
+  void (*on_data)(qserver_data_t *cb);
+  void (*on_reply)(qserver_data_t *cb);
+  void (*on_open)(qserver_data_t *cb);
+  void (*on_close)(qserver_data_t *cb);
+};
+
+struct qserver_s
+{
+  int opt;
+  int status;
+  int fd;
+  qserver_table_t callbacks;
+};
 
 
-int sock_get(int port);
-int sock_nonblock();
-int server_loop();
-int server_running();
-int server_shutdown();
+int qserver_loop(qserver_t *server);
 
+int qserver_running(qserver_t *server);
 
-
+int qserver_shutdown(qserver_t *server, int flag);
