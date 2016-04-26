@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -17,7 +18,7 @@ enum {
 };
 
 enum {
-
+  SERVEROPT_LOG = 0x00000001,
 };
 
 typedef struct
@@ -45,3 +46,6 @@ int sock_nonblock();
 int server_loop();
 int server_running();
 int server_shutdown();
+
+
+

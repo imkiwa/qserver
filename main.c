@@ -1,7 +1,12 @@
 #include <signal.h>
+#include <errno.h>
+#include <string.h>
+
 #include "qserver.h"
 
-void on_sigint(int sig)
+#define UNUSED __attribute__((unused))
+
+void on_sigint(int sig UNUSED)
 {
   if (server_running()) {
     printf(":: Reciving SIGINT, shutdown server\n");
@@ -9,7 +14,7 @@ void on_sigint(int sig)
   }
 }
 
-void on_data(cb_data_t *cb)
+void on_data(cb_data_t *cb UNUSED)
 {
   // 处理客户端的消息
 }
@@ -23,7 +28,7 @@ void on_reply(cb_data_t *cb)
   send(cb->fd, cb->buffer, cb->buffer_bytes, 0);
 }
 
-int main(int argc, char **argv)
+int main(int argc UNUSED, char **argv UNUSED)
 {
   signal(SIGINT, on_sigint);
   
@@ -51,3 +56,4 @@ int main(int argc, char **argv)
   printf(":: Cleaning up\n");
   close(fd);
 }
+
