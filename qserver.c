@@ -45,12 +45,11 @@ static int process_io(qserver_t *server, int ep, struct epoll_event *ev)
   ssize_t n = 0;
   struct epoll_event nev;
   
-  nev.data.fd = fd;
   nev.data.ptr = data;
   nev.events = EPOLLET;
   
   if (ev->events & EPOLLIN) {
-    if ((n = recv(fd, data->buffer, BUFFER_SIZE, 0)) == 0) {
+    if ((n = read(fd, data->buffer, BUFFER_SIZE)) == 0) {
       // connection disconnected
       printf(":: Connection disconnected, removing from epoll\n");
       close(fd);
@@ -113,17 +112,10 @@ int qserver_loop(qserver_t *server)
   memset(&ev, '\0', sizeof(ev));
   memset(events, '\0', sizeof(events));
   
-  ev.data.fd = sock;
-  ev.data.ptr = NULL;
   ev.events = EPOLLIN | EPOLLET;
   epoll_ctl(ep, EPOLL_CTL_ADD, sock, &ev);
   
-  for (;;) {
-    if (!qserver_running(server)) {
-      close(ep);
-      break;
-    }
-    
+  while (qserver_running(server)) {
     nfds = epoll_wait(ep, events, MAX_EVENT, 0);
     for (int i = 0; i < nfds; ++i) {
       qserver_data_t *curdata = events[i].data.ptr;
@@ -135,9 +127,6 @@ int qserver_loop(qserver_t *server)
           fprintf(stderr, "W: cb_data_new() failed: %s\n", strerror(errno));
           continue;
         }
-        
-        memset(cb, '\0', sizeof(*cb));
-        memset(&ev, '\0', sizeof(ev));
          
         int conn = accept(sock, (struct sockaddr*) &cb->addr, &cb->addr_len);
         if (conn < 0) {
@@ -147,7 +136,6 @@ int qserver_loop(qserver_t *server)
         
         printf(":: New connection from: %s\n", inet_ntoa(cb->addr.sin_addr));
         cb->fd = conn;
-        ev.data.fd = conn;
         ev.data.ptr = (void*) cb;
         ev.events = EPOLLIN | EPOLLET;
         epoll_ctl(ep, EPOLL_CTL_ADD, conn, &ev);
@@ -155,13 +143,12 @@ int qserver_loop(qserver_t *server)
 
       // I/O Operations
       } else {
-        if (process_io(server, ep, events + i) < 0) {
-          fprintf(stderr, "W: process_io() failed\n");
-        } // if
-      } // else
+        process_io(server, ep, events + i);
+      }
     } // for
-  } // for (;;)
+  } // while
   
+  close(ep);
   return 0;
 }
 

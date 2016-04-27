@@ -12,7 +12,7 @@ qserver_t *pserver;
 void on_sigint(int sig UNUSED)
 {
   if (qserver_running(pserver)) {
-    printf(":: Reciving SIGINT, shutdown server\n");
+    printf("\r:: Reciving SIGINT, shutdown server\n");
     qserver_shutdown(pserver, 1);
   }
 }
@@ -27,8 +27,9 @@ void on_reply(qserver_data_t *cb)
 {
   const static char *msg = "Recived: ";
   // 回复客户端
-  send(cb->fd, msg, strlen(msg), 0);
-  send(cb->fd, cb->buffer, cb->buffer_bytes, 0);
+  write(cb->fd, msg, strlen(msg));
+  write(cb->fd, cb->buffer, cb->buffer_bytes);
+  //printf("[<<<] %s\n", cb->buffer);
 }
 
 int main(int argc UNUSED, char **argv UNUSED)
