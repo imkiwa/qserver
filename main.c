@@ -50,7 +50,6 @@ int main(int argc UNUSED, char **argv UNUSED)
   }
   
   printf(":: Listening on 0.0.0.0:3456\n");
-  printf(":: Main looping\n");
   
   qserver_t server = {
     .fd = fd,
